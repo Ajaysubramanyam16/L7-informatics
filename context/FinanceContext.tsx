@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Expense, Budget, Alert, Category } from '../types';
-import { DEFAULT_ALERT_THRESHOLD } from '../constants';
 
 interface FinanceContextType {
   expenses: Expense[];
@@ -15,15 +14,51 @@ interface FinanceContextType {
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
+// Helper to generate sample data for demonstration
+const generateSampleData = () => {
+  const today = new Date();
+  const currentMonthStr = today.toISOString().slice(0, 7);
+  
+  // Create Budgets
+  const budgets: Budget[] = [
+      { id: 'b1', category: 'Food', month: currentMonthStr, limit: 600, alertThreshold: 80 },
+      { id: 'b2', category: 'Transport', month: currentMonthStr, limit: 300, alertThreshold: 90 },
+      { id: 'b3', category: 'Entertainment', month: currentMonthStr, limit: 200, alertThreshold: 75 },
+      { id: 'b4', category: 'Housing', month: currentMonthStr, limit: 1500, alertThreshold: 90 },
+      { id: 'b5', category: 'Utilities', month: currentMonthStr, limit: 250, alertThreshold: 85 },
+      { id: 'b6', category: 'Shopping', month: currentMonthStr, limit: 150, alertThreshold: 80 },
+  ];
+
+  // Create Expenses spread across the month
+  const expenses: Expense[] = [
+      { id: 'e1', date: new Date(today.getFullYear(), today.getMonth(), 2).toISOString().slice(0, 10), amount: 1200, category: 'Housing', description: 'Monthly Rent' },
+      { id: 'e2', date: new Date(today.getFullYear(), today.getMonth(), 5).toISOString().slice(0, 10), amount: 85.50, category: 'Food', description: 'Grocery Haul' },
+      { id: 'e3', date: new Date(today.getFullYear(), today.getMonth(), 6).toISOString().slice(0, 10), amount: 45.00, category: 'Transport', description: 'Weekly Gas' },
+      { id: 'e4', date: new Date(today.getFullYear(), today.getMonth(), 8).toISOString().slice(0, 10), amount: 120.00, category: 'Utilities', description: 'Electric Bill' },
+      { id: 'e5', date: new Date(today.getFullYear(), today.getMonth(), 10).toISOString().slice(0, 10), amount: 25.00, category: 'Entertainment', description: 'Cinema' },
+      { id: 'e6', date: new Date(today.getFullYear(), today.getMonth(), 12).toISOString().slice(0, 10), amount: 15.90, category: 'Food', description: 'Lunch' },
+      { id: 'e7', date: new Date(today.getFullYear(), today.getMonth(), 15).toISOString().slice(0, 10), amount: 210.00, category: 'Transport', description: 'Car Service' }, // High transport expense
+      { id: 'e8', date: new Date(today.getFullYear(), today.getMonth(), 18).toISOString().slice(0, 10), amount: 160.00, category: 'Entertainment', description: 'Concert Tickets' }, // Puts ent near limit
+      { id: 'e9', date: new Date(today.getFullYear(), today.getMonth(), 20).toISOString().slice(0, 10), amount: 350.00, category: 'Food', description: 'Fancy Dinner & Drinks' }, // Puts food high
+      { id: 'e10', date: new Date(today.getFullYear(), today.getMonth(), 22).toISOString().slice(0, 10), amount: 180.00, category: 'Shopping', description: 'New Shoes' }, // Puts shopping over budget
+  ];
+  
+  return { budgets, expenses };
+};
+
 export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     const saved = localStorage.getItem('expenses');
-    return saved ? JSON.parse(saved) : [];
+    if (saved) return JSON.parse(saved);
+    const { expenses: sample } = generateSampleData();
+    return sample;
   });
 
   const [budgets, setBudgets] = useState<Budget[]>(() => {
     const saved = localStorage.getItem('budgets');
-    return saved ? JSON.parse(saved) : [];
+    if (saved) return JSON.parse(saved);
+    const { budgets: sample } = generateSampleData();
+    return sample;
   });
 
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -61,15 +96,16 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
           newAlerts.push({
             id: `over-${budget.id}-${Date.now()}`,
             type: 'danger',
-            message: `You have exceeded your ${budget.category} budget for ${currentMonth}! Spent: $${spent}, Limit: $${budget.limit}`,
+            message: `Over Budget: You've spent $${spent} on ${budget.category}, exceeding your limit of $${budget.limit}.`,
             date: new Date().toISOString(),
             isRead: false
           });
         } else if (percentage >= budget.alertThreshold) {
+          const remainingPercent = 100 - percentage;
           newAlerts.push({
             id: `warn-${budget.id}-${Date.now()}`,
             type: 'warning',
-            message: `You have used ${percentage.toFixed(0)}% of your ${budget.category} budget for ${currentMonth}.`,
+            message: `Budget Alert: Only ${remainingPercent.toFixed(1)}% remaining for ${budget.category}. Used $${spent} of $${budget.limit}.`,
             date: new Date().toISOString(),
             isRead: false
           });
@@ -77,11 +113,11 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
     });
 
-    // Deduplicate alerts crudely based on message to avoid spamming the user on every render
-    // In a real app, we'd have more sophisticated state tracking for "alert already shown"
+    // Deduplicate alerts based on message
     setAlerts(prev => {
       const existingMessages = new Set(prev.map(a => a.message));
       const uniqueNewAlerts = newAlerts.filter(a => !existingMessages.has(a.message));
+      if (uniqueNewAlerts.length === 0) return prev;
       return [...uniqueNewAlerts, ...prev];
     });
   };

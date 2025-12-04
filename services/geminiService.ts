@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Expense } from "../types";
+import { Expense, Budget } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -38,7 +38,7 @@ export const parseExpenseFromText = async (text: string): Promise<Partial<Expens
 
 export const getFinancialInsights = async (expenses: Expense[]): Promise<string> => {
   try {
-    // Limit to last 50 expenses to avoid token limits in this demo
+    // Limit to last 50 expenses to avoid token limits
     const recentExpenses = expenses.slice(0, 50).map(e => `${e.date}: ${e.description} ($${e.amount}) - ${e.category}`).join('\n');
     
     const response = await ai.models.generateContent({
@@ -53,5 +53,54 @@ export const getFinancialInsights = async (expenses: Expense[]): Promise<string>
   } catch (error) {
     console.error("Gemini insight error:", error);
     return "Could not generate insights right now.";
+  }
+};
+
+export const getChatResponse = async (
+  history: { role: string; text: string }[],
+  message: string,
+  context: { expenses: Expense[]; budgets: Budget[] }
+): Promise<string> => {
+  try {
+    const systemInstruction = `You are SpendSmart AI, a knowledgeable and friendly financial assistant.
+    You have access to the user's financial data below. Use this context to answer their questions about spending habits, budget status, and financial advice.
+    
+    Current Date: ${new Date().toLocaleDateString()}
+    
+    Data Context:
+    ${JSON.stringify(context, null, 2)}
+    
+    Guidelines:
+    - Be concise and helpful.
+    - If asked about specific transactions, reference them from the data.
+    - If asked about budgets, check the limits vs spending in the data.
+    - Mention if a budget is exceeded or near the limit (alert threshold).
+    - Do not make up data if it's not present.
+    `;
+
+    // Convert internal message format to Gemini API format
+    const contents = [
+      ...history.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.text }]
+      })),
+      {
+        role: 'user',
+        parts: [{ text: message }]
+      }
+    ];
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: contents,
+      config: {
+        systemInstruction: systemInstruction,
+      }
+    });
+
+    return response.text || "I'm not sure how to answer that.";
+  } catch (error) {
+    console.error("Gemini chat error:", error);
+    return "I'm having trouble connecting to the service right now. Please try again later.";
   }
 };
